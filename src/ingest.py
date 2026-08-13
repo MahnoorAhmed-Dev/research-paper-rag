@@ -1,13 +1,16 @@
 """
 Builds the vector index for the RAG project.
 
-Reads every PDF in PDF_DIR, splits the text into overlapping chunks, embeds
-those chunks locally, and persists them to a Chroma collection on disk. Run
-this script once up front (and again whenever the PDFs change) to (re)build
-the index. It does not answer questions — that's chain.py's job.
+Reads PDFs, splits their text into overlapping chunks, embeds those chunks
+locally, and persists them to a Chroma collection on disk. Run this script
+directly to fully rebuild the index from every PDF in PDF_DIR. ingest_pdfs()
+is also importable for adding new PDFs incrementally (e.g. from the
+Streamlit uploader) without touching what's already indexed. This file does
+not answer questions — that's chain.py's job.
 """
 
 import sys
+from pathlib import Path
 
 import fitz  # PyMuPDF
 from langchain_core.documents import Document
@@ -25,10 +28,8 @@ from config import (
 )
 
 
-def load_pdfs():
-    """Extract text from every PDF in PDF_DIR, one Document per page."""
-    pdf_paths = sorted(PDF_DIR.glob("*.pdf"))
-
+def load_pdfs(pdf_paths):
+    """Extract text from the given PDFs, one Document per page."""
     documents = []
     for pdf_path in pdf_paths:
         pdf = fitz.open(pdf_path)
@@ -43,15 +44,23 @@ def load_pdfs():
             )
         pdf.close()
 
-    return pdf_paths, documents
+    return documents
 
 
-def main():
-    if not any(PDF_DIR.glob("*.pdf")):
-        print(f"No PDFs found in {PDF_DIR}. Add some PDF files there and re-run this script.")
-        sys.exit(1)
+def _load_embeddings():
+    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
 
-    pdf_paths, documents = load_pdfs()
+
+def ingest_pdfs(pdf_paths: list[Path]) -> int:
+    """
+    Load, chunk, embed, and add the given PDFs to the existing Chroma
+    collection at CHROMA_DIR, leaving whatever is already indexed in place.
+
+    Use this for incremental additions, e.g. new PDFs uploaded through the
+    Streamlit app. For a full rebuild from PDF_DIR, use rebuild_index().
+    Returns the number of chunks added.
+    """
+    documents = load_pdfs(pdf_paths)
     print(f"Loaded {len(pdf_paths)} PDFs, {len(documents)} pages")
 
     splitter = RecursiveCharacterTextSplitter(
@@ -63,24 +72,44 @@ def main():
     print(f"Split into {len(chunks)} chunks")
 
     print("Embedding and storing in Chroma...")
-    embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    vectorstore = Chroma(
+        collection_name=COLLECTION_NAME,
+        embedding_function=_load_embeddings(),
+        persist_directory=str(CHROMA_DIR),
+    )
+    vectorstore.add_documents(chunks)
 
-    # Drop any existing collection with this name first so re-running the
-    # script rebuilds the index instead of appending duplicate chunks.
+    print(f"Done. Persisted to {CHROMA_DIR}/")
+    return len(chunks)
+
+
+def rebuild_index() -> int:
+    """
+    Wipe the existing Chroma collection and rebuild it from scratch using
+    every PDF currently in PDF_DIR.
+
+    Used by the CLI entry point below for full rebuilds; incremental
+    additions should go through ingest_pdfs() instead. Returns the number
+    of chunks the rebuilt index contains.
+    """
+    # Drop any existing collection with this name first so the rebuild
+    # doesn't append duplicate chunks on top of the old index.
     Chroma(
         collection_name=COLLECTION_NAME,
-        embedding_function=embeddings,
+        embedding_function=_load_embeddings(),
         persist_directory=str(CHROMA_DIR),
     ).delete_collection()
 
-    Chroma.from_documents(
-        documents=chunks,
-        embedding=embeddings,
-        collection_name=COLLECTION_NAME,
-        persist_directory=str(CHROMA_DIR),
-    )
+    pdf_paths = sorted(PDF_DIR.glob("*.pdf"))
+    return ingest_pdfs(pdf_paths)
 
-    print(f"Done. Persisted to {CHROMA_DIR}/")
+
+def main():
+    if not any(PDF_DIR.glob("*.pdf")):
+        print(f"No PDFs found in {PDF_DIR}. Add some PDF files there and re-run this script.")
+        sys.exit(1)
+
+    rebuild_index()
 
 
 if __name__ == "__main__":

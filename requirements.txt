@@ -7,3 +7,4 @@ sentence-transformers
 chromadb
 streamlit
 python-dotenv
+langchain-text-splitters
