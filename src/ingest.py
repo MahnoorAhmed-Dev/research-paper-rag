@@ -18,7 +18,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 
-from config import (
+from src.config import (
     PDF_DIR,
     CHROMA_DIR,
     CHUNK_SIZE,
