@@ -4,5 +4,4 @@ __pycache__/
 *.pyc
 venv/
 .venv/
-data/pdfs/*
-!data/pdfs/.gitkeep
+
