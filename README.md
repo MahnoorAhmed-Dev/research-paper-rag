@@ -156,22 +156,6 @@ Assumes no prior familiarity with this project.
   system has no way to actually verify) keeps the verdict honest about what
   it can and can't see.
 
-## Source Documents
-
-Currently indexed in `data/pdfs/` (8 papers on graph neural networks and
-multi-agent LLM systems):
-
-| Filename | Topic (inferred from content) |
-|---|---|
-| `graph_attention_networks.pdf` | Graph Attention Networks (GAT) — masked self-attention over graph neighborhoods |
-| `semi_supervsd_gcn.pdf` | Semi-supervised classification with graph convolutional networks |
-| `graph_conv_rein_learn.pdf` | Graph convolutional reinforcement learning for multi-agent cooperation (DGN) |
-| `learn_trans_behaviour_multiagents.pdf` | Learning transferable, attention-based communication for multi-agent behavior |
-| `comms.pdf` | Communication-graph formalisms (DAG-based) for LLM multi-agent systems |
-| `graph_of_Agents.pdf` | Graph of Agents (GoA) — relevance-based agent sampling and task-specific subgraphs |
-| `G-Designer.pdf` | Variational graph auto-encoder for task-adaptive multi-agent communication topology |
-| `MasRouter.pdf` | LLM routing across heterogeneous models in multi-agent systems |
-
 ## Known Limitations
 
 - **Section detection is heuristic, not real document parsing.**
