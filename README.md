@@ -1,15 +1,8 @@
 # Research Paper RAG
 
-Research Paper RAG is a local, free-to-run retrieval-augmented generation
-system for researchers who want to query, critique, and check the novelty of
-their own claims against a personal collection of research papers. PDF
-parsing, chunking, embedding, retrieval, and re-ranking all run entirely
-offline and locally on your machine; the only network calls are to Groq's
-API for the final answer-generation step, which has a free tier. This
-started as a personal tool for working through a small paper collection —
-it's not a production system or a substitute for careful peer review, but
-it's straightforward to run, inspect, and adapt.
+Research Paper RAG started as a tool I built for myself and a few friends to make sense of the papers piling up during our Final Year Projects; instead of re-reading and cross-referencing a dozen PDFs by hand every time we needed to check whether an idea was actually novel or grounded in the literature, we wanted something that could search, cite, and critique against our own paper collection directly. It grew into something more useful than a one-off script, so I'm sharing it in case it's helpful to anyone else working through the same thing.
 
+It runs entirely locally and free! PDF parsing, chunking, embedding, retrieval, and re-ranking all happen on your own machine, with the only network call going to Groq's API (free tier) for the final generation step. It's not a production system or a substitute for careful peer review; but it's straightforward to run, inspect, and adapt to your own research.
 
 ## Getting Started
 
