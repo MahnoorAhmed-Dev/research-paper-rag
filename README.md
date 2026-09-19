@@ -10,13 +10,8 @@ started as a personal tool for working through a small paper collection —
 it's not a production system or a substitute for careful peer review, but
 it's straightforward to run, inspect, and adapt.
 
-**This repository ships with no papers included.** `data/pdfs/` is empty by
-default (aside from a `.gitkeep`) — add your own PDFs there directly, or
-upload them from the Streamlit sidebar once the app is running.
 
 ## Getting Started
-
-Assumes no prior familiarity with this project.
 
 1. **Clone the repo**
    ```
