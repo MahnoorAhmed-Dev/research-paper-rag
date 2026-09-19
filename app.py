@@ -10,6 +10,15 @@ from src.chain import get_answer
 from src.ingest import ingest_pdfs
 from src.config import PDF_DIR
 
+
+def _format_source(source: dict) -> str:
+    """Render a source dict as a citation caption, including the section
+    when known (see src/chain.py's prompt citations for the matching style)."""
+    section = source.get("section")
+    if section and section != "unknown":
+        return f"{source['filename']} - {section} section, page {source['page']}"
+    return f"{source['filename']} - page {source['page']}"
+
 st.set_page_config(page_title="Research Paper RAG", page_icon="📄")
 st.title("📄 Research Paper RAG")
 st.caption("Ask questions about your indexed research papers and get answers cited back to the source PDFs.")
@@ -57,7 +66,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
         for source in message.get("sources") or []:
-            st.caption(f"{source['filename']} - page {source['page']}")
+            st.caption(_format_source(source))
 
 if not any(PDF_DIR.glob("*.pdf")):
     st.info("No papers indexed yet. Upload a PDF from the sidebar to get started.")
@@ -81,7 +90,7 @@ else:
             if result is not None:
                 st.write(result["answer"])
                 for source in result["sources"]:
-                    st.caption(f"{source['filename']} - page {source['page']}")
+                    st.caption(_format_source(source))
 
         st.session_state.messages.append(
             {

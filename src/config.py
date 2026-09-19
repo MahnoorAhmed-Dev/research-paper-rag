@@ -9,11 +9,14 @@ PDF_DIR = PROJECT_ROOT / "data" / "pdfs"
 # Folder where the persisted Chroma vector store lives
 CHROMA_DIR = PROJECT_ROOT / "chroma_db"
 
-# Target size (in tokens) of each text chunk fed to the splitter
-CHUNK_SIZE = 600
+# Target size (in characters) of each text chunk fed to the splitter.
+# Larger chunks keep more surrounding context around equations and
+# multi-sentence claims, at the cost of fewer, coarser retrieval hits.
+CHUNK_SIZE = 1000
 
-# Number of tokens of overlap between consecutive chunks
-CHUNK_OVERLAP = 100
+# Number of characters of overlap between consecutive chunks. Larger overlap
+# lowers the odds that a key sentence gets orphaned right at a chunk boundary.
+CHUNK_OVERLAP = 200
 
 # HuggingFace model used to embed chunks and queries
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"

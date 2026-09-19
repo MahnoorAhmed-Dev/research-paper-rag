@@ -50,6 +50,8 @@ answer, respond exactly with:
 "I don't have enough information in the provided documents to answer that."
 
 Cite sources inline after each claim, using the format (filename, p. page).
+If a context label also names a section (e.g. "[paper.pdf, Method section,
+p. 4]"), include it: (filename, Method section, p. page).
 
 Context:
 {context}
@@ -64,10 +66,20 @@ llm = ChatGroq(model=GROQ_MODEL, temperature=0)
 
 def _format_docs(docs):
     """Render retrieved chunks as labeled context text for the prompt."""
-    return "\n\n".join(
-        f"[{doc.metadata.get('source')}, p. {doc.metadata.get('page')}]\n{doc.page_content}"
-        for doc in docs
-    )
+    labeled = []
+    for doc in docs:
+        source = doc.metadata.get("source")
+        page = doc.metadata.get("page")
+        section = doc.metadata.get("section")
+        # "section" is only present for chunks ingested after section-aware
+        # chunking was added (see ingest.py's _tag_sections); older chunks
+        # and the "unknown" tag both fall back to the plain filename/page label.
+        if section and section != "unknown":
+            label = f"[{source}, {section} section, p. {page}]"
+        else:
+            label = f"[{source}, p. {page}]"
+        labeled.append(f"{label}\n{doc.page_content}")
+    return "\n\n".join(labeled)
 
 
 def get_answer(question: str) -> dict:
@@ -110,7 +122,11 @@ def get_answer(question: str) -> dict:
 
     result = rag_chain.invoke({"question": question})
     sources = [
-        {"filename": doc.metadata.get("source"), "page": doc.metadata.get("page")}
+        {
+            "filename": doc.metadata.get("source"),
+            "page": doc.metadata.get("page"),
+            "section": doc.metadata.get("section"),
+        }
         for doc in result["source_documents"]
     ]
     return {"answer": result["answer"], "sources": sources}
