@@ -14,12 +14,15 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_groq import ChatGroq
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
+from sentence_transformers import CrossEncoder
 
 from src.config import (
     CHROMA_DIR,
     EMBEDDING_MODEL,
     BGE_QUERY_PREFIX,
     GROQ_MODEL,
+    RERANK_MODEL,
+    RETRIEVAL_CANDIDATES,
     RETRIEVER_K,
     COLLECTION_NAME,
 )
@@ -42,6 +45,44 @@ def _get_embeddings():
     if _embeddings is None:
         _embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
     return _embeddings
+
+
+_reranker = None
+
+
+def _get_reranker():
+    """
+    Lazily load and cache the cross-encoder re-ranking model.
+
+    Same rationale as _get_embeddings(): loading the model is the slow,
+    one-time cost, but scoring a handful of (question, chunk) pairs with an
+    already-loaded cross-encoder is cheap, so it's safe to reuse across calls.
+    """
+    global _reranker
+    if _reranker is None:
+        _reranker = CrossEncoder(RERANK_MODEL)
+    return _reranker
+
+
+def _rerank(question: str, candidates: list) -> list:
+    """
+    Re-score the candidate pool with a cross-encoder and keep the top
+    RETRIEVER_K.
+
+    Embedding similarity (used for the initial Chroma retrieval) is a fast
+    approximation: the query and each chunk are embedded independently, then
+    compared by vector distance -- the model never actually looks at the
+    query and the chunk together. A cross-encoder scores each pair jointly,
+    which is far more accurate, but too slow to run against the whole
+    collection. So the pipeline retrieves broad (RETRIEVAL_CANDIDATES chunks
+    via cheap vector search), then reranks narrow (down to RETRIEVER_K via
+    the more expensive but more precise cross-encoder).
+    """
+    reranker = _get_reranker()
+    pairs = [(question, doc.page_content) for doc in candidates]
+    scores = reranker.predict(pairs)
+    ranked = sorted(zip(scores, candidates), key=lambda pair: pair[0], reverse=True)
+    return [doc for _, doc in ranked[:RETRIEVER_K]]
 
 
 PROMPT = ChatPromptTemplate.from_template(
@@ -106,7 +147,7 @@ def get_answer(question: str) -> dict:
             "empty. Run `python src/ingest.py` first to build the index."
         )
 
-    retriever = vectorstore.as_retriever(search_kwargs={"k": RETRIEVER_K})
+    retriever = vectorstore.as_retriever(search_kwargs={"k": RETRIEVAL_CANDIDATES})
 
     # RunnablePassthrough.assign carries the retrieved documents forward
     # alongside the generated answer, so we can still report sources after
@@ -117,10 +158,13 @@ def get_answer(question: str) -> dict:
             # instruction prefix to embed into the same "intent space" the
             # document chunks were embedded into, but the chunks themselves
             # were embedded plain (see ingest.py) -- prefixing both sides
-            # would cancel the effect the prefix is meant to have. This only
-            # transforms the string handed to the retriever; x["question"]
-            # itself stays unprefixed for the prompt below.
-            source_documents=(lambda x: BGE_QUERY_PREFIX + x["question"]) | retriever
+            # would cancel the effect the prefix is meant to have. The
+            # cross-encoder re-ranking step, in contrast, uses the raw
+            # question -- it wasn't trained on that instruction format.
+            source_documents=lambda x: _rerank(
+                x["question"],
+                retriever.invoke(BGE_QUERY_PREFIX + x["question"]),
+            )
         )
         | RunnablePassthrough.assign(
             context=lambda x: _format_docs(x["source_documents"])

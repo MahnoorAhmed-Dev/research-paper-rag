@@ -37,7 +37,23 @@ BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 # Groq-hosted LLM used to generate answers
 GROQ_MODEL = "openai/gpt-oss-120b"
 
-# Number of chunks the retriever returns per query
+# Cross-encoder used to re-rank the initial candidate pool. Unlike the
+# embedding model, which scores the query and a chunk independently, a
+# cross-encoder scores them together as a pair, which is far more accurate
+# but too slow to run against the whole collection -- so it's only used to
+# re-order the smaller candidate pool RETRIEVAL_CANDIDATES already narrowed
+# down. See chain.py's _rerank().
+RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+# How many chunks to pull from Chroma with cheap embedding similarity before
+# re-ranking. This must be larger than RETRIEVER_K -- it's the wider, noisier
+# pool the cross-encoder picks the true best RETRIEVER_K chunks out of.
+# Too small and re-ranking has nothing meaningful to sort; too large and
+# re-ranking (and the initial Chroma scan) gets slower for little benefit.
+RETRIEVAL_CANDIDATES = 20
+
+# Number of chunks kept AFTER re-ranking and passed to the LLM as context
+# (see RETRIEVAL_CANDIDATES above for how many are retrieved before that).
 RETRIEVER_K = 5
 
 # Name of the Chroma collection storing the paper embeddings
