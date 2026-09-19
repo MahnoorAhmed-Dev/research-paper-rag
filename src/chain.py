@@ -141,6 +141,16 @@ DIRECT EVIDENCE vs. INFERENCE -- label every claim as one or the other:
   matrix, neither can adapt its communication structure to a specific query
   (Source: comms.pdf, Introduction section, p. 2; Source: MasRouter.pdf,
   Related Work section, p. 3)."
+
+If you choose to label a direct evidence statement explicitly (it's optional
+for direct evidence, unlike "Inference:" which is required), the label
+"Direct evidence:" must appear as a sentence prefix only, exactly like
+"Inference:" above -- never inside the citation parenthesis and never
+combined with "Source:" in the same parenthetical.
+Correct: "Direct evidence: the authors report a 3.5% accuracy gain over the
+prior state-of-the-art router (Source: MasRouter.pdf, Experiments section, p. 6)."
+Incorrect: "The authors report a 3.5% accuracy gain over the prior
+state-of-the-art router (Direct evidence: MasRouter.pdf, Experiments section, p. 6)."
 """
 
 PROMPT = ChatPromptTemplate.from_template(
