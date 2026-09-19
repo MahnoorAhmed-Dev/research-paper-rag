@@ -1,9 +1,50 @@
 # Research Paper RAG
 
-A local retrieval-augmented generation (RAG) project over a small corpus of
-research papers on graph neural networks and multi-agent LLM systems. Beyond
-question-answering, it also supports section-by-section methodology critique
-and corpus-scoped novelty checking.
+Research Paper RAG is a local, free-to-run retrieval-augmented generation
+system for researchers who want to query, critique, and check the novelty of
+their own claims against a personal collection of research papers. PDF
+parsing, chunking, embedding, retrieval, and re-ranking all run entirely
+offline and locally on your machine; the only network calls are to Groq's
+API for the final answer-generation step, which has a free tier. This
+started as a personal tool for working through a small paper collection —
+it's not a production system or a substitute for careful peer review, but
+it's straightforward to run, inspect, and adapt.
+
+**This repository ships with no papers included.** `data/pdfs/` is empty by
+default (aside from a `.gitkeep`) — add your own PDFs there directly, or
+upload them from the Streamlit sidebar once the app is running.
+
+## Getting Started
+
+Assumes no prior familiarity with this project.
+
+1. **Clone the repo**
+   ```
+   git clone https://github.com/MahnoorAhmed-Dev/research-paper-rag.git
+   cd research-paper-rag
+   ```
+2. **Get a free Groq API key** at [console.groq.com](https://console.groq.com/keys).
+3. **Set up your environment variables**
+   ```
+   cp .env.example .env
+   ```
+   Then open `.env` and paste in your Groq API key.
+4. **Install dependencies** (a virtual environment is recommended)
+   ```
+   python -m venv venv
+   source venv/bin/activate   # on Windows: venv\Scripts\activate
+   pip install -r requirements.txt
+   ```
+5. **Add your own PDFs** to `data/pdfs/` — or skip this step and upload them
+   later from the Streamlit sidebar.
+6. **Build the index**
+   ```
+   python -m src.ingest
+   ```
+7. **Launch the app**
+   ```
+   streamlit run app.py
+   ```
 
 ## Architecture
 
@@ -179,3 +220,7 @@ Run `ingest.py` as a module (`python -m src.ingest`), not as a script path
 - Never commit automatically. Propose a Conventional Commits-style message
   per logical chunk of work and wait to be asked before running
   `git commit`.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
