@@ -1,16 +1,30 @@
 """
 Connects retrieval (Chroma) with generation (Groq) via an LCEL chain.
 
-Loads the vector index that ingest.py already built and exposes get_answer(),
-which retrieves relevant chunks for a question and asks the LLM to answer
-using only those chunks, citing sources. This file does not build or modify
-the index — run ingest.py first.
+Loads the vector index that ingest.py already built and exposes two entry
+points:
+
+- get_answer(question) -- single-pass retrieval: one global top-k search
+  across the whole collection, re-ranked down to RETRIEVER_K chunks. Best
+  for specific, narrow questions about a particular paper or concept, where
+  the most relevant chunks legitimately cluster in one or two papers and
+  pulling from the rest would just add noise.
+
+- get_answer_multi_doc(question) -- multi-document retrieval: guarantees
+  every indexed paper gets a chance to contribute a few chunks before they're
+  all merged and re-ranked down to a wider final set. Best for broad,
+  comparative questions -- "how do these papers differ in X", methodology
+  gap analysis, novelty checks -- where a single global top-k search could
+  easily return results from just the one or two most similar papers and
+  silently ignore the rest, defeating the point of a cross-paper comparison.
+
+Both cite sources the same way. This file does not build or modify the
+index — run ingest.py first.
 """
 
 from dotenv import load_dotenv
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough
 from langchain_groq import ChatGroq
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -24,6 +38,8 @@ from src.config import (
     RERANK_MODEL,
     RETRIEVAL_CANDIDATES,
     RETRIEVER_K,
+    MULTI_DOC_CHUNKS_PER_PAPER,
+    MULTI_DOC_FINAL_K,
     COLLECTION_NAME,
 )
 
@@ -64,10 +80,9 @@ def _get_reranker():
     return _reranker
 
 
-def _rerank(question: str, candidates: list) -> list:
+def _rerank(question: str, candidates: list, top_k: int = RETRIEVER_K) -> list:
     """
-    Re-score the candidate pool with a cross-encoder and keep the top
-    RETRIEVER_K.
+    Re-score the candidate pool with a cross-encoder and keep the top top_k.
 
     Embedding similarity (used for the initial Chroma retrieval) is a fast
     approximation: the query and each chunk are embedded independently, then
@@ -75,14 +90,16 @@ def _rerank(question: str, candidates: list) -> list:
     query and the chunk together. A cross-encoder scores each pair jointly,
     which is far more accurate, but too slow to run against the whole
     collection. So the pipeline retrieves broad (RETRIEVAL_CANDIDATES chunks
-    via cheap vector search), then reranks narrow (down to RETRIEVER_K via
-    the more expensive but more precise cross-encoder).
+    via cheap vector search, or MULTI_DOC_CHUNKS_PER_PAPER per paper in
+    get_answer_multi_doc), then reranks narrow via the more expensive but
+    more precise cross-encoder. top_k defaults to RETRIEVER_K for the
+    single-document path; get_answer_multi_doc passes MULTI_DOC_FINAL_K.
     """
     reranker = _get_reranker()
     pairs = [(question, doc.page_content) for doc in candidates]
     scores = reranker.predict(pairs)
     ranked = sorted(zip(scores, candidates), key=lambda pair: pair[0], reverse=True)
-    return [doc for _, doc in ranked[:RETRIEVER_K]]
+    return [doc for _, doc in ranked[:top_k]]
 
 
 PROMPT = ChatPromptTemplate.from_template(
@@ -124,14 +141,15 @@ def _format_docs(docs):
     return "\n\n".join(labeled)
 
 
-def get_answer(question: str) -> dict:
-    """Retrieve relevant chunks for `question` and generate a cited answer.
+def _connect_vectorstore() -> Chroma:
+    """
+    Connect to the Chroma collection fresh (not cached at import time) and
+    verify it's populated.
 
-    The vectorstore/retriever/chain are built fresh on every call instead
-    of being cached at import time, so this keeps working even if the
-    Chroma collection was deleted and rebuilt (e.g. via ingest.py) after
-    this module was first imported — a cached retriever would otherwise
-    hold a stale reference to the old, now-deleted collection.
+    Built fresh on every call rather than cached at import time so this
+    keeps working even if the collection was deleted and rebuilt (e.g. via
+    ingest.py) after this module was first imported — a cached reference
+    would otherwise point at the old, now-deleted collection.
     """
     vectorstore = Chroma(
         collection_name=COLLECTION_NAME,
@@ -146,39 +164,99 @@ def get_answer(question: str) -> dict:
             f"Chroma collection '{COLLECTION_NAME}' at {CHROMA_DIR} is missing or "
             "empty. Run `python src/ingest.py` first to build the index."
         )
+    return vectorstore
 
-    retriever = vectorstore.as_retriever(search_kwargs={"k": RETRIEVAL_CANDIDATES})
 
-    # RunnablePassthrough.assign carries the retrieved documents forward
-    # alongside the generated answer, so we can still report sources after
-    # the output parser has reduced the LLM response to plain text.
-    rag_chain = (
-        RunnablePassthrough.assign(
-            # BGE's asymmetric training means the query needs the search
-            # instruction prefix to embed into the same "intent space" the
-            # document chunks were embedded into, but the chunks themselves
-            # were embedded plain (see ingest.py) -- prefixing both sides
-            # would cancel the effect the prefix is meant to have. The
-            # cross-encoder re-ranking step, in contrast, uses the raw
-            # question -- it wasn't trained on that instruction format.
-            source_documents=lambda x: _rerank(
-                x["question"],
-                retriever.invoke(BGE_QUERY_PREFIX + x["question"]),
-            )
-        )
-        | RunnablePassthrough.assign(
-            context=lambda x: _format_docs(x["source_documents"])
-        )
-        | RunnablePassthrough.assign(answer=PROMPT | llm | StrOutputParser())
+def _generate_answer(question: str, source_documents: list) -> dict:
+    """
+    Shared generation step for both retrieval modes: format the given
+    chunks as context, ask the LLM using the shared PROMPT, and build the
+    sources list. Retrieval strategy (single global search vs. per-paper
+    multi-document search) is decided by the caller; this just turns
+    whatever chunks it's handed into a cited answer, so get_answer() and
+    get_answer_multi_doc() stay identical in prompt/citation behavior.
+    """
+    chain = PROMPT | llm | StrOutputParser()
+    answer = chain.invoke(
+        {"question": question, "context": _format_docs(source_documents)}
     )
-
-    result = rag_chain.invoke({"question": question})
     sources = [
         {
             "filename": doc.metadata.get("source"),
             "page": doc.metadata.get("page"),
             "section": doc.metadata.get("section"),
         }
-        for doc in result["source_documents"]
+        for doc in source_documents
     ]
-    return {"answer": result["answer"], "sources": sources}
+    return {"answer": answer, "sources": sources}
+
+
+def get_answer(question: str) -> dict:
+    """Retrieve relevant chunks for `question` and generate a cited answer.
+
+    Single-pass retrieval: one global top-k search across the whole
+    collection. See this module's docstring for when to prefer
+    get_answer_multi_doc() instead.
+    """
+    vectorstore = _connect_vectorstore()
+
+    # Retrieve a wide candidate pool from Chroma (cheap, embedding-based);
+    # _rerank() below narrows it down to RETRIEVER_K with the more accurate
+    # but slower cross-encoder.
+    retriever = vectorstore.as_retriever(search_kwargs={"k": RETRIEVAL_CANDIDATES})
+
+    # BGE's asymmetric training means the query needs the search instruction
+    # prefix to embed into the same "intent space" the document chunks were
+    # embedded into, but the chunks themselves were embedded plain (see
+    # ingest.py) -- prefixing both sides would cancel the effect the prefix
+    # is meant to have.
+    candidates = retriever.invoke(BGE_QUERY_PREFIX + question)
+    source_documents = _rerank(question, candidates)
+
+    return _generate_answer(question, source_documents)
+
+
+def _list_indexed_sources(vectorstore: Chroma) -> list[str]:
+    """
+    Return the distinct source filenames actually present in the Chroma
+    collection.
+
+    Reads this from the collection's own metadata rather than PDF_DIR: the
+    collection is the source of truth for what's actually searchable right
+    now, whereas PDF_DIR can drift out of sync with it (a file dropped into
+    PDF_DIR but not yet run through ingest_pdfs(), or removed from disk
+    after being indexed). This also follows the same established pattern
+    _connect_vectorstore() already uses -- reaching into
+    vectorstore._collection directly, since langchain_chroma doesn't expose
+    a public method for either of these lookups.
+    """
+    metadatas = vectorstore._collection.get(include=["metadatas"])["metadatas"]
+    return sorted({m["source"] for m in metadatas if m.get("source")})
+
+
+def get_answer_multi_doc(question: str) -> dict:
+    """Retrieve relevant chunks for `question` across every indexed paper
+    and generate a cited answer.
+
+    Multi-document retrieval: pulls MULTI_DOC_CHUNKS_PER_PAPER chunks from
+    each paper individually (so every paper gets a chance to contribute,
+    unlike get_answer()'s single global search), merges them into one pool,
+    and re-ranks down to MULTI_DOC_FINAL_K. See this module's docstring for
+    when to prefer this over get_answer().
+    """
+    vectorstore = _connect_vectorstore()
+    filenames = _list_indexed_sources(vectorstore)
+
+    candidates = []
+    for filename in filenames:
+        candidates.extend(
+            vectorstore.similarity_search(
+                BGE_QUERY_PREFIX + question,
+                k=MULTI_DOC_CHUNKS_PER_PAPER,
+                filter={"source": filename},
+            )
+        )
+
+    source_documents = _rerank(question, candidates, top_k=MULTI_DOC_FINAL_K)
+
+    return _generate_answer(question, source_documents)

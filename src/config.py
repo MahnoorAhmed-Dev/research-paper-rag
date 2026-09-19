@@ -56,5 +56,19 @@ RETRIEVAL_CANDIDATES = 20
 # (see RETRIEVAL_CANDIDATES above for how many are retrieved before that).
 RETRIEVER_K = 5
 
+# How many top chunks to pull per individual paper for multi-document
+# retrieval (get_answer_multi_doc), before merging across papers and
+# re-ranking. A single global top-k search can easily return all its
+# results from just the one or two most similar papers; pulling a small,
+# guaranteed slice from every paper first ensures each one at least gets a
+# chance to contribute to broad/comparative questions.
+MULTI_DOC_CHUNKS_PER_PAPER = 2
+
+# Final number of chunks kept after merging every paper's candidates and
+# re-ranking, for multi-document retrieval. Deliberately larger than
+# RETRIEVER_K since synthesizing across multiple papers needs more
+# supporting context than a narrow single-paper question does.
+MULTI_DOC_FINAL_K = RETRIEVER_K * 2
+
 # Name of the Chroma collection storing the paper embeddings
 COLLECTION_NAME = "research_papers"
