@@ -161,14 +161,6 @@ It runs entirely locally and free! PDF parsing, chunking, embedding, retrieval, 
   critique in particular makes one LLM call per detected section, so a long
   document can trigger several calls in quick succession.
 
-## Running it
-
-```
-# add a real GROQ_API_KEY to .env (see .env.example for the placeholder)
-python -m src.ingest          # full rebuild from everything in data/pdfs/
-streamlit run app.py          # launch the UI (Chat / Methodology Critique / Novelty Check)
-python tests/test_pipeline.py # manual smoke test of rebuild/ingest/answer
-```
 
 ## License
 
