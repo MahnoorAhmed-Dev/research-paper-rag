@@ -182,17 +182,6 @@ Run `ingest.py` as a module (`python -m src.ingest`), not as a script path
 `sys.path`, so `from src.config import ...` fails with
 `ModuleNotFoundError: No module named 'src'`.
 
-## Working style for this project
-
-- Build and review one file/change at a time; check in before moving to the
-  next step rather than generating large chunks of the project in one pass.
-- Code should be well-commented and teaching-oriented (this project doubles
-  as learning material), not just terse working code — but comments should
-  explain *why*, not restate what the code obviously does.
-- Never commit automatically. Propose a Conventional Commits-style message
-  per logical chunk of work and wait to be asked before running
-  `git commit`.
-
 ## License
 
 MIT — see [LICENSE](LICENSE).
