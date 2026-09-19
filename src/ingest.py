@@ -185,6 +185,9 @@ def rebuild_index() -> int:
     additions should go through ingest_pdfs() instead. Returns the number
     of chunks the rebuilt index contains.
     """
+    print(f"Rebuilding with {EMBEDDING_MODEL} -- this is a larger model than "
+          "all-MiniLM-L6-v2, so embedding will take noticeably longer.")
+
     # Drop any existing collection with this name first so the rebuild
     # doesn't append duplicate chunks on top of the old index.
     Chroma(

@@ -18,6 +18,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from src.config import (
     CHROMA_DIR,
     EMBEDDING_MODEL,
+    BGE_QUERY_PREFIX,
     GROQ_MODEL,
     RETRIEVER_K,
     COLLECTION_NAME,
@@ -112,7 +113,14 @@ def get_answer(question: str) -> dict:
     # the output parser has reduced the LLM response to plain text.
     rag_chain = (
         RunnablePassthrough.assign(
-            source_documents=(lambda x: x["question"]) | retriever
+            # BGE's asymmetric training means the query needs the search
+            # instruction prefix to embed into the same "intent space" the
+            # document chunks were embedded into, but the chunks themselves
+            # were embedded plain (see ingest.py) -- prefixing both sides
+            # would cancel the effect the prefix is meant to have. This only
+            # transforms the string handed to the retriever; x["question"]
+            # itself stays unprefixed for the prompt below.
+            source_documents=(lambda x: BGE_QUERY_PREFIX + x["question"]) | retriever
         )
         | RunnablePassthrough.assign(
             context=lambda x: _format_docs(x["source_documents"])
