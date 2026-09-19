@@ -112,12 +112,12 @@ def _rerank(question: str, candidates: list, top_k: int = RETRIEVER_K) -> list:
 # what a paper actually says and what the model inferred from it -- both are
 # fine to include, but only if they're clearly distinguishable and checkable
 # against the source.
-PROMPT = ChatPromptTemplate.from_template(
-    """You are answering a question about research papers for someone who
-needs to verify every claim against its source. Use ONLY the context below
--- no outside knowledge, and no claim without a citation to back it up.
-
-CITATION FORMAT (required, exact):
+#
+# Pulled out as its own constant (rather than inlined in PROMPT below) so
+# src/critique.py's CRITIQUE_PROMPT can reuse the exact same citation and
+# evidence-labeling rules instead of re-describing them and risking drift
+# between the two prompts.
+CITATION_AND_EVIDENCE_RULES = """CITATION FORMAT (required, exact):
 Every sentence that makes a claim must end with a citation in this exact
 pattern: (Source: filename, Section section, p. X). If the context label
 for that chunk has no section (or it says "unknown"), drop the section
@@ -141,7 +141,14 @@ DIRECT EVIDENCE vs. INFERENCE -- label every claim as one or the other:
   matrix, neither can adapt its communication structure to a specific query
   (Source: comms.pdf, Introduction section, p. 2; Source: MasRouter.pdf,
   Related Work section, p. 3)."
+"""
 
+PROMPT = ChatPromptTemplate.from_template(
+    f"""You are answering a question about research papers for someone who
+needs to verify every claim against its source. Use ONLY the context below
+-- no outside knowledge, and no claim without a citation to back it up.
+
+{CITATION_AND_EVIDENCE_RULES}
 STRICT RULE -- do not violate this: if a claim is not directly supported by
 at least one retrieved chunk, do not make that claim, even if it seems true,
 likely, or common knowledge. Every sentence in your answer must trace back
@@ -151,9 +158,9 @@ respond with exactly this and nothing else:
 "I don't have enough information in the provided documents to answer that."
 
 Context:
-{context}
+{{context}}
 
-Question: {question}
+Question: {{question}}
 
 Answer:"""
 )
@@ -161,8 +168,12 @@ Answer:"""
 llm = ChatGroq(model=GROQ_MODEL, temperature=0)
 
 
-def _format_docs(docs):
-    """Render retrieved chunks as labeled context text for the prompt."""
+def format_docs(docs):
+    """Render retrieved chunks as labeled context text for the prompt.
+
+    No leading underscore: this is reused by src/critique.py so the
+    critique prompt's context is formatted identically to get_answer()'s.
+    """
     labeled = []
     for doc in docs:
         source = doc.metadata.get("source")
@@ -216,7 +227,7 @@ def _generate_answer(question: str, source_documents: list) -> dict:
     """
     chain = PROMPT | llm | StrOutputParser()
     answer = chain.invoke(
-        {"question": question, "context": _format_docs(source_documents)}
+        {"question": question, "context": format_docs(source_documents)}
     )
     sources = [
         {
@@ -272,15 +283,18 @@ def _list_indexed_sources(vectorstore: Chroma) -> list[str]:
     return sorted({m["source"] for m in metadatas if m.get("source")})
 
 
-def get_answer_multi_doc(question: str) -> dict:
-    """Retrieve relevant chunks for `question` across every indexed paper
-    and generate a cited answer.
+def retrieve_multi_doc(question: str, final_k: int = MULTI_DOC_FINAL_K) -> list:
+    """
+    Retrieve candidate chunks across every indexed paper for `question`:
+    pull MULTI_DOC_CHUNKS_PER_PAPER chunks from each paper individually (so
+    every paper gets a chance to contribute, unlike a single global search),
+    merge them into one pool, and re-rank down to `final_k`.
 
-    Multi-document retrieval: pulls MULTI_DOC_CHUNKS_PER_PAPER chunks from
-    each paper individually (so every paper gets a chance to contribute,
-    unlike get_answer()'s single global search), merges them into one pool,
-    and re-ranks down to MULTI_DOC_FINAL_K. See this module's docstring for
-    when to prefer this over get_answer().
+    Pure retrieval, no generation -- kept separate from get_answer_multi_doc()
+    below so other callers can reuse the same retrieval strategy with a
+    different prompt. No leading underscore: this is reused by
+    src/critique.py, which needs this module's multi-document evidence
+    gathering but generates with its own CRITIQUE_PROMPT instead of PROMPT.
     """
     vectorstore = _connect_vectorstore()
     filenames = _list_indexed_sources(vectorstore)
@@ -295,6 +309,16 @@ def get_answer_multi_doc(question: str) -> dict:
             )
         )
 
-    source_documents = _rerank(question, candidates, top_k=MULTI_DOC_FINAL_K)
+    return _rerank(question, candidates, top_k=final_k)
 
+
+def get_answer_multi_doc(question: str) -> dict:
+    """Retrieve relevant chunks for `question` across every indexed paper
+    and generate a cited answer.
+
+    Multi-document retrieval: see retrieve_multi_doc() above for how the
+    candidate pool is built. See this module's docstring for when to prefer
+    this over get_answer().
+    """
+    source_documents = retrieve_multi_doc(question)
     return _generate_answer(question, source_documents)
