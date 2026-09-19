@@ -163,24 +163,12 @@ It runs entirely locally and free! PDF parsing, chunking, embedding, retrieval, 
 
 ## Running it
 
-Use the `rag-project` conda env — it has the LangChain/Groq/PyMuPDF stack
-this code needs. (There's also a `research-paper-rag` conda env with a
-similarly-plausible name, but it's set up for a different project's stack —
-don't use it here.)
-
 ```
-conda activate rag-project
 # add a real GROQ_API_KEY to .env (see .env.example for the placeholder)
-
 python -m src.ingest          # full rebuild from everything in data/pdfs/
 streamlit run app.py          # launch the UI (Chat / Methodology Critique / Novelty Check)
 python tests/test_pipeline.py # manual smoke test of rebuild/ingest/answer
 ```
-
-Run `ingest.py` as a module (`python -m src.ingest`), not as a script path
-(`python src/ingest.py`) — the latter doesn't put the project root on
-`sys.path`, so `from src.config import ...` fails with
-`ModuleNotFoundError: No module named 'src'`.
 
 ## License
 
