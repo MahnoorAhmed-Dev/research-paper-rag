@@ -293,6 +293,19 @@ def _list_indexed_sources(vectorstore: Chroma) -> list[str]:
     return sorted({m["source"] for m in metadatas if m.get("source")})
 
 
+def count_indexed_papers() -> int:
+    """
+    Return how many distinct papers are currently indexed.
+
+    No leading underscore: used by src/novelty.py so its "scoped to N
+    papers" caveat reflects the actual corpus size rather than a number
+    hardcoded at prompt-design time, which would drift out of date as
+    papers are added or removed via ingest_pdfs()/rebuild_index().
+    """
+    vectorstore = _connect_vectorstore()
+    return len(_list_indexed_sources(vectorstore))
+
+
 def retrieve_multi_doc(question: str, final_k: int = MULTI_DOC_FINAL_K) -> list:
     """
     Retrieve candidate chunks across every indexed paper for `question`:
