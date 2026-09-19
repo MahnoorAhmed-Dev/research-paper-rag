@@ -8,4 +8,4 @@ chromadb
 streamlit
 python-dotenv
 langchain-text-splitters
-ipykernal
+ipykernel

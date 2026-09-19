@@ -6,3 +6,4 @@ venv/
 .venv/
 data/pdfs/*
 !data/pdfs/.gitkeep
+CLAUDE.md
