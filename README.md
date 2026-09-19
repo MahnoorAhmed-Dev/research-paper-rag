@@ -29,6 +29,11 @@ It runs entirely locally and free! PDF parsing, chunking, embedding, retrieval, 
    ```
    python -m src.ingest
    ```
+   Run it this way (as a module), not as `python src/ingest.py` — the script
+   form doesn't add the project root to Python's path, so the internal
+   `from src.config import ...` imports fail with
+   `ModuleNotFoundError: No module named 'src'`.
+   
 7. **Launch the app**
    ```
    streamlit run app.py
