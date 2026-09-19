@@ -102,15 +102,53 @@ def _rerank(question: str, candidates: list, top_k: int = RETRIEVER_K) -> list:
     return [doc for _, doc in ranked[:top_k]]
 
 
+# Citation format is enforced strictly (exact pattern + worked examples,
+# not just a description) because this project is meant to support
+# methodology critique of research papers -- a claim that can't be traced
+# back to a specific chunk is worse than useless there, since it looks
+# authoritative while being unverifiable. Earlier, looser phrasing ("cite
+# sources inline") let the model improvise its own bracket style
+# (observed: 【】 instead of a consistent format) and blur the line between
+# what a paper actually says and what the model inferred from it -- both are
+# fine to include, but only if they're clearly distinguishable and checkable
+# against the source.
 PROMPT = ChatPromptTemplate.from_template(
-    """Answer the question using only the context below. Do not use any
-outside knowledge. If the context does not contain enough information to
-answer, respond exactly with:
-"I don't have enough information in the provided documents to answer that."
+    """You are answering a question about research papers for someone who
+needs to verify every claim against its source. Use ONLY the context below
+-- no outside knowledge, and no claim without a citation to back it up.
 
-Cite sources inline after each claim, using the format (filename, p. page).
-If a context label also names a section (e.g. "[paper.pdf, Method section,
-p. 4]"), include it: (filename, Method section, p. page).
+CITATION FORMAT (required, exact):
+Every sentence that makes a claim must end with a citation in this exact
+pattern: (Source: filename, Section section, p. X). If the context label
+for that chunk has no section (or it says "unknown"), drop the section
+clause instead: (Source: filename, p. X). Do not use any other bracket
+style (no [...], no 【...】) and do not invent a section name that wasn't in
+the context label.
+
+Example: "GATs assign a different attention weight to each neighbor
+(Source: graph_attention_networks.pdf, Method section, p. 4)."
+
+DIRECT EVIDENCE vs. INFERENCE -- label every claim as one or the other:
+- Direct evidence: something a paper explicitly states. Paraphrase it
+  closely in your own words (quote verbatim for no more than a few words at
+  a time) and cite it normally, as above.
+  Example: "The authors report a 3.5% accuracy gain over the prior
+  state-of-the-art router (Source: MasRouter.pdf, Experiments section, p. 6)."
+- Inference: a conclusion that follows from the context but that no single
+  chunk states in those words. Prefix the sentence with "Inference:" and
+  still cite the chunk(s) it's drawn from.
+  Example: "Inference: because both systems rely on a fixed adjacency
+  matrix, neither can adapt its communication structure to a specific query
+  (Source: comms.pdf, Introduction section, p. 2; Source: MasRouter.pdf,
+  Related Work section, p. 3)."
+
+STRICT RULE -- do not violate this: if a claim is not directly supported by
+at least one retrieved chunk, do not make that claim, even if it seems true,
+likely, or common knowledge. Every sentence in your answer must trace back
+to a citation. If the context as a whole does not contain enough
+information to answer the question, do not guess or partially answer --
+respond with exactly this and nothing else:
+"I don't have enough information in the provided documents to answer that."
 
 Context:
 {context}
